@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
     dotenv::dotenv().ok();
     
     let otel_enabled = std::env::var("OTEL_ENABLED").unwrap_or_default() == "true";
-    let otel_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_else(|_| "http://localhost:5080/api/default/v1/traces".to_string());
+    let otel_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_else(|_| "http://o2c-openobserve-collector-gateway-collector.openobserve-collector.svc:4318".to_string());
     let otel_auth = std::env::var("OTEL_EXPORTER_OTLP_HEADERS").ok(); // Simplified for Basic Auth or similar
 
     // 1. Initialize logging and tracing
