@@ -1,0 +1,95 @@
+name: Rust S3 ASR Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  fast-check:
+    name: ⚡ Quick Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.81.0
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+      - name: Quick compile check
+        run: cargo check
+
+  build-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust with cache
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.81.0
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+      - name: Build Rust binary (cached)
+        run: cargo build --release
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-s3-asr-binary
+          path: target/release/rust-s3-asr
+          retention-days: 1
+
+  build-docker:
+    needs: build-rust
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-s3-asr-binary
+          path: target/release/
+      - name: Make binary executable
+        run: chmod +x target/release/rust-s3-asr
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Set lower case IMAGE_NAME
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: release-ci
+          build-args: |
+            PREBUILT_BINARY=target/release/rust-s3-asr
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
