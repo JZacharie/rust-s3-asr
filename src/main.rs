@@ -30,13 +30,18 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::EnvFilter::from_default_env());
 
     if otel_enabled {
-        let tracer = infrastructure::otel::init_otel("rust-s3-asr", &otel_endpoint, otel_auth)?;
+        let tracer = infrastructure::otel::init_otel("rust-s3-asr", &otel_endpoint, otel_auth.clone())?;
         registry.with(OpenTelemetryLayer::new(tracer)).init();
     } else {
         registry.init();
     }
 
-    info!("🚀 Starting Rust S3 ASR Application v{}", env!("CARGO_PKG_VERSION"));
+    info!("=========================================");
+    info!("🚀 Rust S3 ASR starting...");
+    info!("   Version:     v{}", env!("CARGO_PKG_VERSION"));
+    info!("   Git Hash:    {}", env!("GIT_HASH"));
+    info!("   Build Date:  {}", env!("COMPILATION_DATE"));
+    info!("   Profile:     {}", if cfg!(debug_assertions) { "debug" } else { "release" });
     info!("=========================================");
 
     // 2. Load configuration from environment
@@ -63,18 +68,21 @@ async fn main() -> Result<()> {
     let llm_model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "whisper-1".to_string());
 
     info!("⚙️ Configuration:");
-    info!("  - MQTT Host: {}", mqtt_host);
-    info!("  - MQTT Port: {}", mqtt_port);
-    info!("  - MQTT Input Topic: {}", mqtt_input_topic);
-    info!("  - MQTT Output Topic: {}", mqtt_output_topic);
-    info!("  - MQTT User: {}", mqtt_user.as_deref().unwrap_or("none"));
-    info!("  - S3 Bucket: {}", s3_bucket);
-    info!("  - S3 Endpoint: {}", s3_endpoint);
-    info!("  - S3 Region: {}", s3_region);
-    info!("  - S3 Ignore SSL: {}", s3_ignore_ssl);
-    info!("  - LLM URL: {}", llm_url);
-    info!("  - LLM Model: {}", llm_model);
-    if llm_api_key.is_some() { info!("  - LLM API Key: [SET]"); }
+    info!("  - MQTT Host:           {}", mqtt_host);
+    info!("  - MQTT Port:           {}", mqtt_port);
+    info!("  - MQTT Input Topic:    {}", mqtt_input_topic);
+    info!("  - MQTT Output Topic:   {}", mqtt_output_topic);
+    info!("  - MQTT User:           {}", mqtt_user.as_deref().unwrap_or("none"));
+    info!("  - S3 Bucket:           {}", s3_bucket);
+    info!("  - S3 Endpoint:         {}", s3_endpoint);
+    info!("  - S3 Region:           {}", s3_region);
+    info!("  - S3 Ignore SSL:       {}", s3_ignore_ssl);
+    info!("  - LLM URL:             {}", llm_url);
+    info!("  - LLM Model:           {}", llm_model);
+    info!("  - OTel Enabled:        {}", otel_enabled);
+    info!("  - OTel Endpoint:       {}", otel_endpoint);
+    if llm_api_key.is_some() { info!("  - LLM API Key:         [SET]"); }
+    if otel_auth.is_some() { info!("  - OTel Auth Header:    [SET]"); }
 
     // 3. Initialize S3 Client
     info!("📦 Initializing S3 Client...");
