@@ -94,18 +94,35 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  notify-slack:
-    name: 🔔 Notify Slack
+  deploy:
+    name: 🚢 Deploy to Cluster
     needs: [build-docker]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && success()
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: Dev
     steps:
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_JO3 }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Rollout deployment
+        run: |
+          kubectl rollout restart deployment rust-s3-asr -n ai
+          kubectl rollout status deployment rust-s3-asr -n ai
+
       - name: Notify Slack
+        if: success()
         env:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           jq -n \
             --arg msg "$COMMIT_MSG" \
-            '{text: ("✅ *Rust S3 ASR Deployed*\n\n🚀 Version: `${{ github.sha }}`\n📝 Commit: " + $msg)}' \
-            | curl -X POST -H 'Content-type: application/json' -d @- $SLACK_WEBHOOK
+            '{text: ("✅ *Rust S3 ASR (Dev) Deployed*\n\n🚀 Version: `${{ github.sha }}`\n📝 " + $msg)}' \
+            | curl -X POST -H 'Content-type: application/json' -d @- "$SLACK_WEBHOOK"
