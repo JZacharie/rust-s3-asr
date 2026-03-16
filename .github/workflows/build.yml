@@ -93,3 +93,19 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  notify-slack:
+    name: 🔔 Notify Slack
+    needs: [build-docker]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && success()
+    steps:
+      - name: Notify Slack
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          jq -n \
+            --arg msg "$COMMIT_MSG" \
+            '{text: ("✅ *Rust S3 ASR Deployed*\n\n🚀 Version: `${{ github.sha }}`\n📝 Commit: " + $msg)}' \
+            | curl -X POST -H 'Content-type: application/json' -d @- $SLACK_WEBHOOK
