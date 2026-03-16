@@ -28,7 +28,7 @@ impl LlmPort for LlmRepository {
     #[tracing::instrument(skip(self, audio_data))]
     async fn asr(&self, audio_data: Vec<u8>, filename: &str) -> Result<String> {
         let url = format!("{}/audio/transcriptions", self.base_url);
-        info!("🎙️ Calling LiteLLM ASR at {} with model {}", url, self.model);
+        info!("🎙️ Calling ASR at {} with model {}", url, self.model);
         
         let part = multipart::Part::bytes(audio_data)
             .file_name(filename.to_string())
@@ -42,19 +42,21 @@ impl LlmPort for LlmRepository {
         let mut request = self.client.post(&url).multipart(form);
 
         if let Some(ref key) = self.api_key {
-            request = request.header("Authorization", format!("Bearer {}", key));
+            if !key.is_empty() {
+                request = request.header("Authorization", format!("Bearer {}", key));
+            }
         }
 
-        let response = request.send().await.context("Failed to send ASR request to LiteLLM")?;
+        let response = request.send().await.context("Failed to send ASR request")?;
         let status = response.status();
 
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            error!("❌ LiteLLM ASR error (Status {}): {}", status, text);
+            error!("❌ ASR error (Status {}): {}", status, text);
             return Err(anyhow!("ASR API error {}: {}", status, text));
         }
 
-        let json: Value = response.json().await.context("Failed to parse ASR response JSON from LiteLLM")?;
+        let json: Value = response.json().await.context("Failed to parse ASR response JSON")?;
         
         let text = json["text"]
             .as_str()
