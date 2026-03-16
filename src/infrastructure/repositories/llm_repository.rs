@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use reqwest::multipart;
 use serde_json::Value;
-use tracing::{info, debug};
+use tracing::{info, error};
 
 pub struct LlmRepository {
     client: reqwest::Client,
@@ -44,22 +44,23 @@ impl LlmPort for LlmRepository {
             request = request.header("Authorization", format!("Bearer {}", key));
         }
 
-        let response = request.send().await.context("Failed to send ASR request")?;
+        let response = request.send().await.context("Failed to send ASR request to LiteLLM")?;
+        let status = response.status();
 
-        if !response.status().is_success() {
-            let status = response.status();
+        if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
+            error!("❌ LiteLLM ASR error (Status {}): {}", status, text);
             return Err(anyhow!("ASR API error {}: {}", status, text));
         }
 
-        let json: Value = response.json().await.context("Failed to parse ASR response JSON")?;
+        let json: Value = response.json().await.context("Failed to parse ASR response JSON from LiteLLM")?;
         
         let text = json["text"]
             .as_str()
-            .ok_or_else(|| anyhow!("No 'text' field in ASR response"))?
+            .ok_or_else(|| anyhow!("No 'text' field in ASR response: {:?}", json))?
             .to_string();
 
-        debug!("ASR result: {}", text);
+        info!("✅ ASR successful, received {} characters", text.len());
         Ok(text)
     }
 }

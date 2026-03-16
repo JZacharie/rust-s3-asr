@@ -47,7 +47,22 @@ async fn main() -> Result<()> {
     let llm_api_key = std::env::var("LLM_API_KEY").ok();
     let llm_model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "whisper-1".to_string());
 
+    info!("⚙️ Configuration:");
+    info!("  - MQTT Host: {}", mqtt_host);
+    info!("  - MQTT Port: {}", mqtt_port);
+    info!("  - MQTT Input Topic: {}", mqtt_input_topic);
+    info!("  - MQTT Output Topic: {}", mqtt_output_topic);
+    info!("  - MQTT User: {}", mqtt_user.as_deref().unwrap_or("none"));
+    info!("  - S3 Bucket: {}", s3_bucket);
+    info!("  - S3 Endpoint: {}", s3_endpoint);
+    info!("  - S3 Region: {}", s3_region);
+    info!("  - S3 Ignore SSL: {}", s3_ignore_ssl);
+    info!("  - LLM URL: {}", llm_url);
+    info!("  - LLM Model: {}", llm_model);
+    if llm_api_key.is_some() { info!("  - LLM API Key: [SET]"); }
+
     // 3. Initialize S3 Client
+    info!("📦 Initializing S3 Client...");
     let credentials = aws_sdk_s3::config::Credentials::new(s3_access_key, s3_secret_key, None, None, "custom");
     let mut s3_config_builder = aws_sdk_s3::config::Builder::new()
         .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
@@ -63,8 +78,10 @@ async fn main() -> Result<()> {
     let s3_config = s3_config_builder.build();
     let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
     let s3_repo = Arc::new(S3Repository::new(s3_client, s3_bucket));
+    info!("✅ S3 Client initialized");
 
     // 4. Initialize MQTT Repository
+    info!("📡 Initializing MQTT connection...");
     let (mqtt_repo, mut eventloop) = MqttRepository::new(&mqtt_host, mqtt_port, "rust-s3-asr", mqtt_user, mqtt_password);
     let mqtt_repo = Arc::new(mqtt_repo);
 

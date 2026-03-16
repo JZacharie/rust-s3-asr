@@ -18,7 +18,7 @@ impl S3Repository {
 #[async_trait]
 impl S3Port for S3Repository {
     async fn download(&self, key: &str) -> Result<Vec<u8>> {
-        info!("📥 Downloading {} from bucket {}", key, self.bucket);
+        info!("📥 Downloading '{}' from bucket '{}'", key, self.bucket);
         
         let resp = self.client
             .get_object()
@@ -26,9 +26,11 @@ impl S3Port for S3Repository {
             .key(key)
             .send()
             .await
-            .context("Failed to get object from S3")?;
+            .with_context(|| format!("Failed to get object '{}' from bucket '{}'", key, self.bucket))?;
             
-        let data = resp.body.collect().await.context("Failed to collect S3 body bytes")?;
-        Ok(data.into_bytes().to_vec())
+        let data = resp.body.collect().await.with_context(|| format!("Failed to collect bytes for object '{}'", key))?;
+        let bytes = data.into_bytes().to_vec();
+        info!("✅ Downloaded {} bytes for {}", bytes.len(), key);
+        Ok(bytes)
     }
 }
