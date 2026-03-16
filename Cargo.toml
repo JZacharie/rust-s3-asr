@@ -31,3 +31,10 @@ async-trait = "0.1"
 futures = "0.3"
 uuid = { version = "1.3", features = ["v4"] }
 dotenv = "0.15"
+
+# Observability - OpenTelemetry
+opentelemetry = { version = "0.21" }
+opentelemetry-otlp = { version = "0.14", features = ["http-proto", "reqwest-client"] }
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.13"
+tracing-opentelemetry = "0.22"

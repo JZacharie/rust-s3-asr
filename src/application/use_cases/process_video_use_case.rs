@@ -25,6 +25,7 @@ impl ProcessVideoUseCase {
         }
     }
 
+    #[tracing::instrument(skip(self), fields(s3_key = %s3_key))]
     pub async fn execute(&self, s3_key: &str) -> Result<()> {
         info!("🎬 Starting processing for video: {}", s3_key);
 

@@ -17,6 +17,7 @@ impl S3Repository {
 
 #[async_trait]
 impl S3Port for S3Repository {
+    #[tracing::instrument(skip(self))]
     async fn download(&self, key: &str) -> Result<Vec<u8>> {
         info!("📥 Downloading '{}' from bucket '{}'", key, self.bucket);
         

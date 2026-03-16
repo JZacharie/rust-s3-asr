@@ -12,17 +12,32 @@ use std::sync::Arc;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use rumqttc::{Event, Packet};
+use tracing_opentelemetry::OpenTelemetryLayer;
 
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 1. Initialize logging
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // 2. Load configuration from environment
+    dotenv::dotenv().ok();
+    
+    let otel_enabled = std::env::var("OTEL_ENABLED").unwrap_or_default() == "true";
+    let otel_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_else(|_| "http://localhost:5080/api/default/v1/traces".to_string());
+    let otel_auth = std::env::var("OTEL_EXPORTER_OTLP_HEADERS").ok(); // Simplified for Basic Auth or similar
 
-    info!("🚀 Starting Rust S3 ASR Application");
+    // 1. Initialize logging and tracing
+    let registry = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::EnvFilter::from_default_env());
+
+    if otel_enabled {
+        let tracer = infrastructure::otel::init_otel("rust-s3-asr", &otel_endpoint, otel_auth)?;
+        registry.with(OpenTelemetryLayer::new(tracer)).init();
+    } else {
+        registry.init();
+    }
+
+    info!("🚀 Starting Rust S3 ASR Application v{}", env!("CARGO_PKG_VERSION"));
+    info!("=========================================");
 
     // 2. Load configuration from environment
     dotenv::dotenv().ok();
@@ -102,28 +117,41 @@ async fn main() -> Result<()> {
 
     info!("📡 Listening for messages on: {}", mqtt_input_topic);
 
-    // 8. Main Event Loop
+    // 8. Main Event Loop with Graceful Shutdown
+    info!("📡 Starting event loop...");
     loop {
-        match eventloop.poll().await {
-            Ok(notification) => {
-                if let Event::Incoming(Packet::Publish(publish)) = notification {
-                    if publish.topic == mqtt_input_topic {
-                        let payload = String::from_utf8_lossy(&publish.payload).to_string();
-                        info!("🔔 Received trigger on topic {}: {}", publish.topic, payload);
-                        
-                        let use_case_clone = use_case.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = use_case_clone.execute(&payload).await {
-                                error!("❌ Error processing video {}: {}", payload, e);
+        tokio::select! {
+            result = eventloop.poll() => {
+                match result {
+                    Ok(notification) => {
+                        if let Event::Incoming(Packet::Publish(publish)) = notification {
+                            if publish.topic == mqtt_input_topic {
+                                let payload = String::from_utf8_lossy(&publish.payload).to_string();
+                                info!("🔔 Received trigger on topic {}: {}", publish.topic, payload);
+                                
+                                let use_case_clone = use_case.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) = use_case_clone.execute(&payload).await {
+                                        error!("❌ Error processing video {}: {}", payload, e);
+                                    }
+                                });
                             }
-                        });
+                        }
+                    }
+                    Err(e) => {
+                        warn!("⚠️ MQTT connection error: {:?} — retrying in 5s", e);
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     }
                 }
             }
-            Err(e) => {
-                warn!("⚠️ MQTT connection error: {:?} — retrying in 5s", e);
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            _ = tokio::signal::ctrl_c() => {
+                info!("🛑 Shutdown signal received");
+                break;
             }
         }
     }
+
+    info!("👋 Shutting down...");
+    infrastructure::otel::shutdown_otel();
+    Ok(())
 }

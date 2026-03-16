@@ -25,6 +25,7 @@ impl LlmRepository {
 
 #[async_trait]
 impl LlmPort for LlmRepository {
+    #[tracing::instrument(skip(self, audio_data))]
     async fn asr(&self, audio_data: Vec<u8>, filename: &str) -> Result<String> {
         let url = format!("{}/audio/transcriptions", self.base_url);
         info!("🎙️ Calling LiteLLM ASR at {} with model {}", url, self.model);
