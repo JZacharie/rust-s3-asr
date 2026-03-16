@@ -1,5 +1,5 @@
 # --- Phase de production (CI) ---
-FROM debian:bookworm-slim AS release-ci
+FROM debian:trixie-slim AS release-ci
 ARG PREBUILT_BINARY
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
