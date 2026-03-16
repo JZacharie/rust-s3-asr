@@ -105,7 +105,19 @@ async fn main() -> Result<()> {
 
     // 4. Initialize MQTT Repository
     info!("📡 Initializing MQTT connection...");
-    let (mqtt_repo, mut eventloop) = MqttRepository::new(&mqtt_host, mqtt_port, "rust-s3-asr", mqtt_user, mqtt_password);
+    let client_id = format!("rust-s3-asr-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+    info!("  - MQTT Client ID:      {}", client_id);
+    
+    let mqtt_user_trimmed = mqtt_user.map(|s| s.trim().to_string());
+    let mqtt_password_trimmed = mqtt_password.map(|s| s.trim().to_string());
+
+    let (mqtt_repo, mut eventloop) = MqttRepository::new(
+        &mqtt_host, 
+        mqtt_port, 
+        &client_id, 
+        mqtt_user_trimmed, 
+        mqtt_password_trimmed
+    );
     let mqtt_repo = Arc::new(mqtt_repo);
 
     // 5. Initialize LLM Repository
