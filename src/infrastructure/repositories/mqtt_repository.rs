@@ -10,9 +10,13 @@ pub struct MqttRepository {
 }
 
 impl MqttRepository {
-    pub fn new(host: &str, port: u16, client_id: &str) -> (Self, rumqttc::EventLoop) {
+    pub fn new(host: &str, port: u16, client_id: &str, username: Option<String>, password: Option<String>) -> (Self, rumqttc::EventLoop) {
         let mut mqttoptions = MqttOptions::new(client_id, host, port);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
+        
+        if let (Some(u), Some(p)) = (username, password) {
+            mqttoptions.set_credentials(u, p);
+        }
         
         let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
         (Self { client }, eventloop)

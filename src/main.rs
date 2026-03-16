@@ -33,12 +33,15 @@ async fn main() -> Result<()> {
         .parse::<u16>()?;
     let mqtt_input_topic = std::env::var("MQTT_INPUT_TOPIC").unwrap_or_else(|_| "input/video".to_string());
     let mqtt_output_topic = std::env::var("MQTT_OUTPUT_TOPIC").unwrap_or_else(|_| "output/transcription".to_string());
+    let mqtt_user = std::env::var("MQTT_USER").ok();
+    let mqtt_password = std::env::var("MQTT_PASSWORD").ok();
     
     let s3_bucket = std::env::var("S3_BUCKET").context("S3_BUCKET not set")?;
-    let s3_endpoint = std::env::var("S3_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".to_string());
+    let s3_endpoint = std::env::var("S3_ENDPOINT").unwrap_or_else(|_| "https://minio-170-api.zacharie.org".to_string());
     let s3_region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string());
     let s3_access_key = std::env::var("S3_ACCESS_KEY").context("S3_ACCESS_KEY not set")?;
     let s3_secret_key = std::env::var("S3_SECRET_KEY").context("S3_SECRET_KEY not set")?;
+    let s3_ignore_ssl = std::env::var("S3_IGNORE_SSL").unwrap_or_default() == "true";
 
     let llm_url = std::env::var("LLM_URL").unwrap_or_else(|_| "http://localhost:4000".to_string());
     let llm_api_key = std::env::var("LLM_API_KEY").ok();
@@ -46,18 +49,23 @@ async fn main() -> Result<()> {
 
     // 3. Initialize S3 Client
     let credentials = aws_sdk_s3::config::Credentials::new(s3_access_key, s3_secret_key, None, None, "custom");
-    let s3_config = aws_sdk_s3::config::Builder::new()
+    let mut s3_config_builder = aws_sdk_s3::config::Builder::new()
         .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
         .region(aws_sdk_s3::config::Region::new(s3_region))
         .endpoint_url(s3_endpoint)
         .credentials_provider(credentials)
-        .force_path_style(true)
-        .build();
+        .force_path_style(true);
+
+    if s3_ignore_ssl {
+        s3_config_builder = infrastructure::s3_utils::configure_insecure_s3(s3_config_builder);
+    }
+
+    let s3_config = s3_config_builder.build();
     let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
     let s3_repo = Arc::new(S3Repository::new(s3_client, s3_bucket));
 
     // 4. Initialize MQTT Repository
-    let (mqtt_repo, mut eventloop) = MqttRepository::new(&mqtt_host, mqtt_port, "rust-s3-asr");
+    let (mqtt_repo, mut eventloop) = MqttRepository::new(&mqtt_host, mqtt_port, "rust-s3-asr", mqtt_user, mqtt_password);
     let mqtt_repo = Arc::new(mqtt_repo);
 
     // 5. Initialize LLM Repository
