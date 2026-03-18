@@ -14,6 +14,8 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use rumqttc::{Event, Packet};
 use tracing_opentelemetry::OpenTelemetryLayer;
+use aws_smithy_types::timeout::TimeoutConfig;
+use std::time::Duration;
 
 
 #[tokio::main]
@@ -88,11 +90,18 @@ async fn main() -> Result<()> {
     // 3. Initialize S3 Client
     info!("📦 Initializing S3 Client...");
     let credentials = aws_sdk_s3::config::Credentials::new(s3_access_key, s3_secret_key, None, None, "custom");
+    let timeout_config = TimeoutConfig::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .read_timeout(Duration::from_secs(30))
+        .operation_timeout(Duration::from_secs(60))
+        .build();
+
     let mut s3_config_builder = aws_sdk_s3::config::Builder::new()
         .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
         .region(aws_sdk_s3::config::Region::new(s3_region))
         .endpoint_url(s3_endpoint)
         .credentials_provider(credentials)
+        .timeout_config(timeout_config)
         .force_path_style(true);
 
     if s3_ignore_ssl {

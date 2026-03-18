@@ -18,6 +18,7 @@ rumqttc = "0.24"
 aws-config = { version = "1.1", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.1"
 aws-smithy-runtime = { version = "1.1", features = ["client", "connector-hyper-0-14-x"] }
+aws-smithy-types = "1.1"
 hyper-rustls = { version = "0.24", features = ["rustls-native-certs", "http2"] }
 rustls-021 = { package = "rustls", version = "0.21", features = ["dangerous_configuration"] }
 

@@ -2,7 +2,7 @@ use crate::domain::ports::S3Port;
 use crate::application::use_cases::process_video_use_case::ProcessVideoUseCase;
 use anyhow::Result;
 use std::sync::Arc;
-use tracing::{info, error};
+use tracing::{info, error, debug};
 
 pub struct PeriodicS3CheckUseCase {
     s3_port: Arc<dyn S3Port>,
@@ -24,29 +24,24 @@ impl PeriodicS3CheckUseCase {
         info!("🔍 Starting periodic S3 bucket scan...");
 
         // 1. List all files in the bucket (empty prefix)
+        debug!("Listing all files in bucket...");
         let files = self.s3_port.list_files("").await?;
-        info!("Found {} objects in S3 bucket", files.len());
+        info!("📊 Found {} total objects in S3 bucket", files.len());
 
         // 2. Filter for potential media files
         let media_files: Vec<String> = files.into_iter()
             .filter(|f| self.is_supported_media(f))
             .collect();
 
-        info!("Identified {} potential media files to check", media_files.len());
+        info!("🎯 Identified {} potential media files to check", media_files.len());
 
         // 3. Process each media file
-        // ProcessVideoUseCase already handles the "exists" check for .txt, 
-        // but we can also do it here if we want to avoid redundant calls.
-        // Let's rely on ProcessVideoUseCase's internal check for consistency.
-        for file in media_files {
-            let use_case = self.process_video_use_case.clone();
-            let file_clone = file.clone();
+        for (i, file) in media_files.iter().enumerate() {
+            info!("[{}/{}] Checking media file: {}", i + 1, media_files.len(), file);
             
-            // We can spawn these or run them sequentially. 
-            // For periodic check, sequential might be safer to avoid overloading, 
-            // but let's do sequential for now.
-            if let Err(e) = use_case.execute(&file_clone).await {
-                error!("❌ Error during periodic processing of {}: {}", file_clone, e);
+            let use_case = self.process_video_use_case.clone();
+            if let Err(e) = use_case.execute(file).await {
+                error!("❌ Error processing {}: {}", file, e);
             }
         }
 
