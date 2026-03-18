@@ -10,6 +10,9 @@ pub trait MqttPort: Send + Sync {
 #[async_trait]
 pub trait S3Port: Send + Sync {
     async fn download(&self, key: &str) -> Result<Vec<u8>>;
+    async fn upload(&self, key: &str, data: Vec<u8>) -> Result<()>;
+    async fn list_files(&self, prefix: &str) -> Result<Vec<String>>;
+    async fn exists(&self, key: &str) -> Result<bool>;
 }
 
 #[async_trait]

@@ -29,6 +29,13 @@ impl ProcessVideoUseCase {
     pub async fn execute(&self, s3_key: &str) -> Result<()> {
         info!("🎬 Starting processing for video: {}", s3_key);
 
+        // 0. Check if already processed
+        let output_key = format!("{}.txt", s3_key);
+        if self.s3_port.exists(&output_key).await? {
+            info!("⏭️ Skipping {}: already processed ({} exists)", s3_key, output_key);
+            return Ok(());
+        }
+
         // 1. Download from S3
         let video_data = match self.s3_port.download(s3_key).await {
             Ok(data) => {
@@ -61,6 +68,17 @@ impl ProcessVideoUseCase {
             Err(e) => {
                 error!("❌ Failed to publish transcription for {} to topic {}: {}", s3_key, self.output_topic, e);
                 return Err(e);
+            }
+        }
+
+        // 4. Save to S3
+        match self.s3_port.upload(&output_key, transcription.as_bytes().to_vec()).await {
+            Ok(_) => {
+                info!("✅ Successfully saved transcription for {} to {}", s3_key, output_key);
+            }
+            Err(e) => {
+                error!("❌ Failed to save transcription for {} to {}: {}", s3_key, output_key, e);
+                // We don't return error here because the main goal (MQTT publish) was successful
             }
         }
 

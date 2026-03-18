@@ -4,6 +4,7 @@ mod infrastructure;
 
 use anyhow::{Context, Result};
 use application::use_cases::process_video_use_case::ProcessVideoUseCase;
+use application::use_cases::periodic_s3_check_use_case::PeriodicS3CheckUseCase;
 use infrastructure::repositories::llm_repository::LlmRepository;
 use infrastructure::repositories::mqtt_repository::MqttRepository;
 use infrastructure::repositories::s3_repository::S3Repository;
@@ -126,10 +127,29 @@ async fn main() -> Result<()> {
     // 6. Initialize Use Case
     let use_case = Arc::new(ProcessVideoUseCase::new(
         mqtt_repo.clone(),
-        s3_repo,
+        s3_repo.clone(),
         llm_repo,
         mqtt_output_topic,
     ));
+
+    // 6b. Initialize Periodic Check Use Case
+    let periodic_check_use_case = Arc::new(PeriodicS3CheckUseCase::new(
+        s3_repo.clone(),
+        use_case.clone(),
+    ));
+
+    // 6c. Spawn Periodic Check Task
+    let periodic_check_clone = periodic_check_use_case.clone();
+    tokio::spawn(async move {
+        info!("⏲️ Periodic S3 check task started (interval: 60s)");
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            if let Err(e) = periodic_check_clone.execute().await {
+                error!("❌ Error in periodic S3 check: {}", e);
+            }
+        }
+    });
 
     // 7. Subscribe to input topic
     mqtt_repo.subscribe(&mqtt_input_topic).await?;
