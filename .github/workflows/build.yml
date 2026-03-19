@@ -105,11 +105,11 @@ jobs:
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
 
-      - name: Configure kubectl
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG_JO3 }}" > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+      - name: Set Kubernetes Context
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG_JO3 }}
 
       - name: Rollout deployment
         run: |
