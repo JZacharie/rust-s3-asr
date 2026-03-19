@@ -34,7 +34,6 @@ pub fn configure_insecure_s3(builder: S3ConfigBuilder) -> S3ConfigBuilder {
         .with_tls_config(rustls_config)
         .https_or_http()
         .enable_http1()
-        .enable_http2()
         .build();
 
     let http_client = HyperClientBuilder::new().build(connector);
