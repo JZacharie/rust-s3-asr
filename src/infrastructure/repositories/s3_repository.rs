@@ -58,10 +58,12 @@ impl S3Port for S3Repository {
     async fn list_files(&self, prefix: &str) -> Result<Vec<String>> {
         debug!("🔍 Listing files in bucket '{}' with prefix '{}'", self.bucket, prefix);
         
-        let resp = self.client
-            .list_objects_v2()
-            .bucket(&self.bucket)
-            .prefix(prefix)
+        let mut builder = self.client.list_objects_v2().bucket(&self.bucket);
+        if !prefix.is_empty() {
+            builder = builder.prefix(prefix);
+        }
+
+        let resp = builder
             .send()
             .await
             .with_context(|| format!("Failed to list objects in bucket '{}' with prefix '{}'", self.bucket, prefix))?;
