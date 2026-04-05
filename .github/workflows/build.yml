@@ -1,4 +1,4 @@
-name: Rust S3 ASR Build
+name: 🦀 Rust S3 ASR Build
 
 on:
   push:
@@ -7,47 +7,72 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository_owner }}/rust-s3-asr
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  fast-check:
-    name: ⚡ Quick Validation
+  # ============================================================================
+  # Phase 1: Security Audit
+  # ============================================================================
+  security:
+    name: 🔒 Security Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: actions/checkout@v6
         with:
-          toolchain: stable
-      - name: Cache Rust
-        uses: swatinem/rust-cache@v2
-      - name: Quick compile check
-        run: cargo check
+          fetch-depth: 0
 
+      - name: Install Gitleaks
+        run: |
+          wget https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks_8.30.1_linux_x64.tar.gz
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Run Gitleaks
+        run: gitleaks detect --verbose --redact
+
+  # ============================================================================
+  # Phase 2: Build Rust binary
+  # ============================================================================
   build-rust:
+    name: 🦀 Build Rust Binary
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
       - name: Setup Rust with cache
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Cache Rust
         uses: swatinem/rust-cache@v2
-      - name: Build Rust binary (cached)
-        run: cargo build --release
+        with:
+          shared-key: "rust-s3-asr"
+
+      - name: Build Rust binary (release)
+        run: |
+          cargo build --release
+          ls -lh target/release/rust-s3-asr
+
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rust-s3-asr-binary
           path: target/release/rust-s3-asr
           retention-days: 1
 
+  # ============================================================================
+  # Phase 3: Containerization
+  # ============================================================================
   build-docker:
+    name: 🐳 Build Docker Image
     needs: build-rust
     runs-on: ubuntu-latest
     permissions:
@@ -55,36 +80,37 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
       - name: Download binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: rust-s3-asr-binary
           path: target/release/
-      - name: Make binary executable
-        run: chmod +x target/release/rust-s3-asr
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Set lower case IMAGE_NAME
-        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
-      - name: Log in to Container Registry
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: release-ci
@@ -93,23 +119,30 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          no-cache: true
 
+  # ============================================================================
+  # Phase 4: Continuous Deployment (CD)
+  # ============================================================================
   deploy:
     name: 🚢 Deploy to Cluster
     needs: [build-docker]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment:
-      name: Dev
     steps:
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
 
-      - name: Set Kubernetes Context
-        uses: azure/k8s-set-context@v3
-        with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBECONFIG_JO3 }}
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_JO3 }}" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: ArgoCD Sync
+        run: |
+          # Patch ArgoCD Application to trigger a hard refresh/sync
+          kubectl patch app rust-s3-asr -n argocd -p '{"operation":{"sync":{"revisions":["main","main"]}}}' --type=merge
 
       - name: Rollout deployment
         run: |
@@ -122,7 +155,9 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          jq -n \
-            --arg msg "$COMMIT_MSG" \
-            '{text: ("✅ *Rust S3 ASR (Dev) Deployed*\n\n🚀 Version: `${{ github.sha }}`\n📝 " + $msg)}' \
-            | curl -X POST -H 'Content-type: application/json' -d @- "$SLACK_WEBHOOK"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"text\": \"✅ *Rust S3 ASR Deployed to Cluster*\n\n🚀 Version: \`${{ github.sha }}\`\n📝 Commit: ${COMMIT_MSG}\"
+            }" \
+            $SLACK_WEBHOOK
+
